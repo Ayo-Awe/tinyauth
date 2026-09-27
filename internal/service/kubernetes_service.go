@@ -285,7 +285,13 @@ func (k *KubernetesService) resyncGVR(res watchedResource, ctx context.Context) 
 		k.log.App.Warn().Err(err).Str("res", res.pretty()).Msg("Failed to list resources for resync")
 		return err
 	}
+	seen := make(map[ResourceMeta]any)
 	for _, item := range list.Items {
+		seen[ResourceMeta{
+			Typ:       res.typ,
+			Name:      item.GetName(),
+			Namespace: item.GetNamespace(),
+		}] = struct{}{}
 		newTypedItem, err := new(typedItem).fromUnstructured(res.typ, &item)
 		if err != nil {
 			k.log.App.Warn().Err(err).Str("res", res.pretty()).Msg("Failed to decode resource, skipping")
@@ -293,6 +299,17 @@ func (k *KubernetesService) resyncGVR(res watchedResource, ctx context.Context) 
 		}
 		k.watchedItemChange(res, newTypedItem, watch.Modified)
 	}
+	k.log.App.Debug().Str("res", res.pretty()).Int("count", len(list.Items)).Msg("Resync complete")
+	k.mu.Lock()
+	for key := range k.apps {
+		if key.Typ != res.typ {
+			continue
+		}
+		if _, ok := seen[key]; !ok {
+			delete(k.apps, key)
+		}
+	}
+	k.mu.Unlock()
 	k.log.App.Debug().Str("res", res.pretty()).Int("count", len(list.Items)).Msg("Resync complete")
 	return nil
 }

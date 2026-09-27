@@ -11,15 +11,22 @@ import (
 )
 
 func hostMatchesHostname(host string, hostname string) bool {
+	if host == "" {
+		return true
+	}
 	host = normalizeDomain(host)
 	hostname = normalizeDomain(hostname)
 	if suffix, ok := strings.CutPrefix(host, "*."); ok {
-		return strings.HasSuffix(hostname, "."+suffix)
+		prefix, matches := strings.CutSuffix(hostname, "."+suffix)
+		return matches && prefix != "" && !strings.Contains(prefix, ".")
 	}
 	return host == hostname
 }
 
 func hostCoversName(host string, name string) bool {
+	if host == "" {
+		return true
+	}
 	host = strings.ToLower(host)
 	if strings.HasPrefix(host, "*.") {
 		return true
