@@ -193,7 +193,7 @@ func (auth *AuthService) SearchUser(username string) (*model.UserSearch, error) 
 	return nil, ErrUserNotFound
 }
 
-func (auth *AuthService) CheckUserPassword(search model.UserSearch, password string) error {
+func (auth *AuthService) CheckUserPassword(search model.UserSearch, password string) (err error) {
 	switch search.Type {
 	case model.UserLocal:
 		user := auth.GetLocalUser(search.Username)
@@ -203,14 +203,20 @@ func (auth *AuthService) CheckUserPassword(search model.UserSearch, password str
 		return bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
 	case model.UserLDAP:
 		if auth.ldap != nil {
-			err := auth.ldap.Bind(search.Username, password)
+			defer func() {
+				bindErr := auth.ldap.BindService(true)
+				if bindErr != nil {
+					if err != nil {
+						err = fmt.Errorf("failed to rebind to ldap service account: %w, original error: %w", bindErr, err)
+						return
+					}
+					err = fmt.Errorf("failed to rebind to ldap service account: %w", bindErr)
+				}
+			}()
+
+			err = auth.ldap.Bind(search.Username, password)
 			if err != nil {
 				return fmt.Errorf("failed to bind to ldap user: %w", err)
-			}
-
-			err = auth.ldap.BindService(true)
-			if err != nil {
-				return fmt.Errorf("failed to bind to ldap service account: %w", err)
 			}
 
 			return nil
