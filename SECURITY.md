@@ -14,12 +14,9 @@ Or send us an email at <security@tinyauth.app>.
 
 ### A note on AI-assisted reports
 
-If AI tooling (LLMs, automated scanners, agentic assistants, etc.) helped you discover, analyse, or write up this issue, please say so in your report. This isn't a judgement - AI-assisted findings are welcome - but disclosing it up front helps maintainers calibrate how much additional verification a report needs, and tends to make the report itself clearer.
+If AI tooling (LLMs, automated scanners, agentic assistants, etc.) helped you discover, analyze, or write up this issue, please disclose that in your report. This is not a judgement, AI-assisted findings are welcome. Disclosing AI use up front helps maintainers understand how much additional verification may be necessary.
 
-> [!WARNING]
-> We accept security reports created with the assistance of LLMs, but we **do not accept reports generated entirely by LLMs**.
->
-> Reports that show little to no meaningful human analysis or verification, such as directly copied LLM-generated descriptions, will be **closed** and **will not be considered for CVE assignment**.
+However, security reports generated entirely by AI with little or no human analysis or verification, such as directly copied LLM-generated descriptions, will be **closed**.
 
 When submitting a report, please use the structure below so it can be triaged quickly.
 
