@@ -881,7 +881,7 @@ func TestProxyController(t *testing.T) {
 			description: "Forward auth and auth request headers should fail for nginx",
 			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
 				req := httptest.NewRequest("GET", "/api/auth/nginx", nil)
-				req.Header.Set("x-forwarded-host", "foo.example.com")
+				req.Header.Set("x-forwarded-host", "foobar.example.com")
 				req.Header.Set("x-forwarded-proto", "https")
 				req.Header.Set("x-forwarded-uri", "/foo?bar=foo")
 				req.Header.Set("x-original-url", "https://foo.example.com/foo?bar=foo")
@@ -895,9 +895,44 @@ func TestProxyController(t *testing.T) {
 			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
 				req := httptest.NewRequest("HEAD", "/api/auth/envoy?path=/hello", nil)
 				req.Host = "foo.example.com"
+				req.Header.Set("x-forwarded-host", "foobar.example.com")
+				req.Header.Set("x-forwarded-proto", "https")
+				req.Header.Set("x-forwarded-uri", "/foo?bar=foo")
+				router.ServeHTTP(recorder, req)
+
+				assert.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			description: "Forward auth and auth request headers should succeed for nginx if they match",
+			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
+				req := httptest.NewRequest("GET", "/api/auth/nginx", nil)
 				req.Header.Set("x-forwarded-host", "foo.example.com")
 				req.Header.Set("x-forwarded-proto", "https")
 				req.Header.Set("x-forwarded-uri", "/foo?bar=foo")
+				req.Header.Set("x-original-url", "https://foo.example.com/foo?bar=foo")
+				router.ServeHTTP(recorder, req)
+
+				assert.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			description: "Forward auth and ext authz headers should succeed for envoy of they match",
+			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
+				req := httptest.NewRequest("HEAD", "/api/auth/envoy?path=/foo?bar=foo", nil)
+				req.Host = "foo.example.com"
+				req.Header.Set("x-forwarded-host", "foo.example.com")
+				req.Header.Set("x-forwarded-proto", "https")
+				req.Header.Set("x-forwarded-uri", "/foo?bar=foo")
+				router.ServeHTTP(recorder, req)
+
+				assert.Equal(t, http.StatusBadRequest, recorder.Code)
+			},
+		},
+		{
+			description: "Proxy without any modules matching should fail",
+			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
+				req := httptest.NewRequest("GET", "/api/auth/traefik", nil)
 				router.ServeHTTP(recorder, req)
 
 				assert.Equal(t, http.StatusBadRequest, recorder.Code)
