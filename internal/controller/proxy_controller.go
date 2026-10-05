@@ -534,7 +534,7 @@ func (controller *ProxyController) getContextFromAuthModule(c *gin.Context, modu
 
 func (controller *ProxyController) compareProxyContext(ctx1, ctx2 ProxyContext) bool {
 	ctx1.Type = AuthModuleUnknown
-	ctx1.Type = AuthModuleUnknown
+	ctx2.Type = AuthModuleUnknown
 	return reflect.DeepEqual(ctx1, ctx2)
 }
 

@@ -878,7 +878,7 @@ func TestProxyController(t *testing.T) {
 			},
 		},
 		{
-			description: "Forward auth and auth request headers should fail for nginx",
+			description: "Forward auth and different auth request headers should fail for nginx",
 			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
 				req := httptest.NewRequest("GET", "/api/auth/nginx", nil)
 				req.Header.Set("x-forwarded-host", "foobar.example.com")
@@ -891,7 +891,7 @@ func TestProxyController(t *testing.T) {
 			},
 		},
 		{
-			description: "Forward auth and ext authz headers should fail for envoy",
+			description: "Forward auth and different ext authz headers should fail for envoy",
 			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
 				req := httptest.NewRequest("HEAD", "/api/auth/envoy?path=/hello", nil)
 				req.Host = "foo.example.com"
@@ -904,7 +904,10 @@ func TestProxyController(t *testing.T) {
 			},
 		},
 		{
-			description: "Forward auth and auth request headers should succeed for nginx if they match",
+			description: "Forward auth and same auth request headers should succeed for nginx",
+			middlewares: []gin.HandlerFunc{
+				simpleCtx,
+			},
 			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
 				req := httptest.NewRequest("GET", "/api/auth/nginx", nil)
 				req.Header.Set("x-forwarded-host", "foo.example.com")
@@ -913,11 +916,14 @@ func TestProxyController(t *testing.T) {
 				req.Header.Set("x-original-url", "https://foo.example.com/foo?bar=foo")
 				router.ServeHTTP(recorder, req)
 
-				assert.Equal(t, http.StatusBadRequest, recorder.Code)
+				assert.Equal(t, http.StatusOK, recorder.Code)
 			},
 		},
 		{
 			description: "Forward auth and ext authz headers should succeed for envoy of they match",
+			middlewares: []gin.HandlerFunc{
+				simpleCtx,
+			},
 			run: func(t *testing.T, router *gin.Engine, recorder *httptest.ResponseRecorder) {
 				req := httptest.NewRequest("HEAD", "/api/auth/envoy?path=/foo?bar=foo", nil)
 				req.Host = "foo.example.com"
@@ -926,7 +932,7 @@ func TestProxyController(t *testing.T) {
 				req.Header.Set("x-forwarded-uri", "/foo?bar=foo")
 				router.ServeHTTP(recorder, req)
 
-				assert.Equal(t, http.StatusBadRequest, recorder.Code)
+				assert.Equal(t, http.StatusOK, recorder.Code)
 			},
 		},
 		{
