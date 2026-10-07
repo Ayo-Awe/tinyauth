@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -28,7 +27,6 @@ const (
 	AuthRequest AuthModuleType = iota
 	ExtAuthz
 	ForwardAuth
-	AuthModuleUnknown
 )
 
 type ProxyType int
@@ -41,6 +39,8 @@ const (
 )
 
 var BrowserUserAgentRegex = regexp.MustCompile("Chrome|Gecko|AppleWebKit|Opera|Edge")
+
+var envoyAuthPath = "/api/auth/envoy?path="
 
 type Proxy struct {
 	Proxy string `uri:"proxy" binding:"required"`
@@ -424,19 +424,19 @@ func (controller *ProxyController) getAuthRequestContext(c *gin.Context) (ProxyC
 		return ProxyContext{}, errors.New("x-original-url not found")
 	}
 
-	url, err := url.Parse(xOriginalUrl)
+	u, err := url.Parse(xOriginalUrl)
 
 	if err != nil {
 		return ProxyContext{}, err
 	}
 
-	host := url.Host
+	host := u.Host
 
 	if strings.TrimSpace(host) == "" {
 		return ProxyContext{}, errors.New("host not found")
 	}
 
-	proto := url.Scheme
+	proto := u.Scheme
 
 	if strings.TrimSpace(proto) == "" {
 		return ProxyContext{}, errors.New("proto not found")
@@ -447,7 +447,7 @@ func (controller *ProxyController) getAuthRequestContext(c *gin.Context) (ProxyC
 	return ProxyContext{
 		Host:    host,
 		Proto:   proto,
-		PathRaw: url.RequestURI(),
+		PathRaw: u.RequestURI(),
 		Method:  method,
 		Type:    AuthRequest,
 	}, nil
@@ -469,23 +469,23 @@ func (controller *ProxyController) getExtAuthzContext(c *gin.Context) (ProxyCont
 	}
 
 	// The path is attached to the end of the /api/auth/envoy?path= string so we just strip it out
-	if !strings.HasPrefix(c.Request.RequestURI, "/api/auth/envoy?path=") {
+	if !strings.HasPrefix(c.Request.RequestURI, envoyAuthPath) {
 		return ProxyContext{}, errors.New("path not found")
 	}
 
-	path := strings.TrimPrefix(c.Request.RequestURI, "/api/auth/envoy?path=")
+	p := strings.TrimPrefix(c.Request.RequestURI, envoyAuthPath)
 
-	if strings.TrimSpace(path) == "" {
+	if strings.TrimSpace(p) == "" {
 		return ProxyContext{}, errors.New("path not found")
 	}
 
-	// For envoy we need to support every method
+	// For ext_authz we need to support every method
 	method := c.Request.Method
 
 	return ProxyContext{
 		Host:    host,
 		Proto:   proto,
-		PathRaw: path,
+		PathRaw: p,
 		Method:  method,
 		Type:    ExtAuthz,
 	}, nil
@@ -537,9 +537,31 @@ func (controller *ProxyController) getContextFromAuthModule(c *gin.Context, modu
 }
 
 func (controller *ProxyController) compareProxyContext(ctx1, ctx2 ProxyContext) bool {
-	ctx1.Type = AuthModuleUnknown
-	ctx2.Type = AuthModuleUnknown
-	return reflect.DeepEqual(ctx1, ctx2)
+	return ctx1.Host == ctx2.Host && ctx1.Proto == ctx2.Proto && ctx1.PathRaw == ctx2.PathRaw && ctx1.Method == ctx2.Method
+}
+
+func (controller *ProxyController) includedAuthModules(c *gin.Context) []AuthModuleType {
+	var modules []AuthModuleType
+
+	if strings.HasPrefix(c.Request.RequestURI, envoyAuthPath) &&
+		strings.TrimPrefix(c.Request.RequestURI, envoyAuthPath) != "" {
+		modules = append(modules, ExtAuthz)
+	}
+
+	hasURI := c.GetHeader("x-forwarded-uri") != ""
+	hasHost := c.GetHeader("x-forwarded-host") != ""
+
+	if hasURI && hasHost {
+		modules = append(modules, ForwardAuth)
+	}
+
+	hasXOriginalUrl := c.GetHeader("x-original-url") != ""
+
+	if hasXOriginalUrl {
+		modules = append(modules, AuthRequest)
+	}
+
+	return modules
 }
 
 func (controller *ProxyController) getProxyContext(c *gin.Context) (ProxyContext, error) {
@@ -564,7 +586,7 @@ func (controller *ProxyController) getProxyContext(c *gin.Context) (ProxyContext
 		return ProxyContext{}, fmt.Errorf("no auth modules supported for proxy: %v", req.Proxy)
 	}
 
-	var ctxSlice []ProxyContext
+	var extracted []ProxyContext
 
 	for _, module := range authModules {
 		controller.log.App.Debug().Msgf("Trying to get context from auth module %v", module)
@@ -574,21 +596,28 @@ func (controller *ProxyController) getProxyContext(c *gin.Context) (ProxyContext
 			continue
 		}
 		controller.log.App.Debug().Msgf("Successfully got context from auth module %v", module)
-		ctxSlice = append(ctxSlice, authModuleCtx)
+		extracted = append(extracted, authModuleCtx)
 	}
 
-	if len(ctxSlice) == 0 {
+	if len(extracted) == 0 {
 		return ProxyContext{}, fmt.Errorf("failed to get context from any auth module")
 	}
 
-	if len(ctxSlice) > 1 {
-		if len(slices.CompactFunc(ctxSlice, controller.compareProxyContext)) > 1 {
-			controller.log.App.Warn().Msg("Request carries headers for multiple auth modules, possible spoofing attempt, denying")
-			return ProxyContext{}, fmt.Errorf("conflicting auth module headers")
-		}
+	includedAuthModules := controller.includedAuthModules(c)
+
+	if len(extracted) != len(includedAuthModules) {
+		controller.log.App.Warn().
+			Msg("Request carries context for multiple auth modules but some failed to extract, cannot determine correct auth modules")
+		return ProxyContext{}, fmt.Errorf("cannot determine correct auth module")
 	}
 
-	ctx := ctxSlice[0]
+	if s := slices.CompactFunc(extracted, controller.compareProxyContext); len(s) > 1 {
+		controller.log.App.Warn().
+			Msg("Request carries context for multiple auth modules but they don't match, cannot determine correct auth modules")
+		return ProxyContext{}, fmt.Errorf("cannot determine correct auth module")
+	}
+
+	ctx := extracted[0]
 
 	// Parse the raw path to populate the cleaned path used for ACLs
 	upath, err := url.Parse(ctx.PathRaw)
