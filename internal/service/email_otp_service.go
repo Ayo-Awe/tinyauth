@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/steveiliop56/ding"
@@ -22,6 +23,8 @@ import (
 // hard-defaults, like the other in-memory login state
 const EmailOTPTTL = 10 * time.Minute
 const EmailOTPResendCooldown = 1 * time.Minute
+const EmailOTPMaxAttempts = 5
+const EmailOTPMaxSendsPerMinute = 30
 const MaxEmailOTPPending = 1024
 const EmailOTPSendTimeout = 30 * time.Second
 
@@ -36,7 +39,9 @@ type Mailer interface {
 }
 
 type emailOTPPending struct {
-	Hash [32]byte
+	Hash     [32]byte
+	Attempts int
+	SentAt   time.Time
 }
 
 type EmailOTPService struct {
@@ -46,9 +51,14 @@ type EmailOTPService struct {
 	ding         *ding.Ding
 	policyEngine *PolicyEngine
 	mailer       Mailer
-	codes        *cache.CacheStore[emailOTPPending]
-	// kept apart from codes so flooding unknown emails cannot evict pending codes
+	// only whitelisted emails, the pending code also holds their resend cooldown
+	codes *cache.CacheStore[emailOTPPending]
+	// cooldowns for other emails, so they get the same response as whitelisted ones
 	cooldowns *cache.CacheStore[struct{}]
+	// global limit on sent emails, so a regex whitelist cannot be used to flood a domain
+	sendsMu     sync.Mutex
+	sendsWindow time.Time
+	sendsCount  int
 }
 
 type EmailOTPServiceInput struct {
@@ -145,26 +155,26 @@ func (s *EmailOTPService) IsEmailWhitelisted(email string) bool {
 }
 
 // SendCode emails a code to a whitelisted address. Every address gets the same
-// result and timing, so callers cannot learn the whitelist: the cooldown applies
-// to all addresses, and the email is delivered in the background.
+// result and timing, so callers cannot learn the whitelist: other addresses get
+// the same cooldown, and the email is delivered in the background.
 func (s *EmailOTPService) SendCode(email string) error {
 	email = NormalizeEmail(email)
 
-	var cooldown bool
-
-	s.cooldowns.WithLock(func(actions cache.CacheStoreActions[struct{}]) {
-		if _, ok := actions.Get(email); ok {
-			cooldown = true
-			return
-		}
-		actions.Set(email, struct{}{}, EmailOTPResendCooldown)
-	})
-
-	if cooldown {
-		return ErrEmailOTPCooldown
-	}
-
 	if !s.IsEmailWhitelisted(email) {
+		var cooldown bool
+
+		s.cooldowns.WithLock(func(actions cache.CacheStoreActions[struct{}]) {
+			if _, ok := actions.Get(email); ok {
+				cooldown = true
+				return
+			}
+			actions.Set(email, struct{}{}, EmailOTPResendCooldown)
+		})
+
+		if cooldown {
+			return ErrEmailOTPCooldown
+		}
+
 		s.log.App.Warn().Str("email", email).Msg("Email otp requested for an email that is not whitelisted")
 		return nil
 	}
@@ -177,8 +187,32 @@ func (s *EmailOTPService) SendCode(email string) error {
 
 	hash := hashEmailOTP(code)
 
-	// a new code replaces any pending one
-	s.codes.Set(email, emailOTPPending{Hash: hash}, EmailOTPTTL)
+	var cooldown bool
+
+	s.codes.WithLock(func(actions cache.CacheStoreActions[emailOTPPending]) {
+		pending, ok := actions.Get(email)
+
+		if ok && time.Since(pending.SentAt) < EmailOTPResendCooldown {
+			cooldown = true
+			return
+		}
+
+		// a new code replaces any pending one
+		actions.Set(email, emailOTPPending{
+			Hash:   hash,
+			SentAt: time.Now(),
+		}, EmailOTPTTL)
+	})
+
+	if cooldown {
+		return ErrEmailOTPCooldown
+	}
+
+	if !s.reserveSend() {
+		s.log.App.Warn().Str("email", email).Msg("Email otp send limit reached, not sending")
+		s.discardCode(email, hash)
+		return nil
+	}
 
 	subject := fmt.Sprintf("Your %s login code", s.config.UI.Title)
 	body := fmt.Sprintf("Your %s login code is %s\n\nIt expires in %d minutes and works once. If you did not request it, you can ignore this email.\n",
@@ -203,6 +237,24 @@ func (s *EmailOTPService) SendCode(email string) error {
 	return nil
 }
 
+// reserveSend counts a send against the global per-minute limit
+func (s *EmailOTPService) reserveSend() bool {
+	s.sendsMu.Lock()
+	defer s.sendsMu.Unlock()
+
+	if time.Since(s.sendsWindow) >= time.Minute {
+		s.sendsWindow = time.Now()
+		s.sendsCount = 0
+	}
+
+	if s.sendsCount >= EmailOTPMaxSendsPerMinute {
+		return false
+	}
+
+	s.sendsCount++
+	return true
+}
+
 // discardCode removes a code that was never delivered, unless a newer code replaced it
 func (s *EmailOTPService) discardCode(email string, hash [32]byte) {
 	s.codes.WithLock(func(actions cache.CacheStoreActions[emailOTPPending]) {
@@ -214,8 +266,9 @@ func (s *EmailOTPService) discardCode(email string, hash [32]byte) {
 	})
 }
 
-// VerifyCode consumes a correct code. Like TOTP, wrong codes are rate limited by
-// the login lockout in the controller, not here.
+// VerifyCode consumes a correct code. Wrong codes also count towards the login
+// lockout in the controller, but that check is not atomic under concurrent
+// requests, so each code is discarded after a few wrong guesses as well.
 func (s *EmailOTPService) VerifyCode(email string, code string) error {
 	email = NormalizeEmail(email)
 	code = strings.TrimSpace(code)
@@ -238,7 +291,18 @@ func (s *EmailOTPService) VerifyCode(email string, code string) error {
 		if subtle.ConstantTimeCompare(pending.Hash[:], hash[:]) == 1 {
 			valid = true
 			actions.Delete(email)
+			return
 		}
+
+		pending.Attempts++
+
+		if pending.Attempts >= EmailOTPMaxAttempts {
+			actions.Delete(email)
+			return
+		}
+
+		// keeps the original expiry
+		actions.Update(email, pending, 0)
 	})
 
 	if !valid {

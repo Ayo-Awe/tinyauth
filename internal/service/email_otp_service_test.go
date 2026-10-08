@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"sync"
 	"testing"
@@ -190,8 +191,7 @@ func TestEmailOTPNewCodeReplacesOldCode(t *testing.T) {
 	require.NoError(t, service.SendCode("jane@example.com"))
 	oldCode := mailer.lastCode(t)
 
-	// skip the resend cooldown
-	service.cooldowns.Delete("jane@example.com")
+	skipResendCooldown(t, service, "jane@example.com")
 
 	require.NoError(t, service.SendCode("jane@example.com"))
 	mailer.waitForMail(t, 2)
@@ -244,4 +244,76 @@ func TestEmailOTPDeliveryFailureDiscardsCode(t *testing.T) {
 		_, ok := service.codes.Get("jane@example.com")
 		return !ok
 	}, time.Second, 5*time.Millisecond)
+}
+
+func skipResendCooldown(t *testing.T, service *EmailOTPService, email string) {
+	pending, ok := service.codes.Get(email)
+	require.True(t, ok)
+	pending.SentAt = pending.SentAt.Add(-EmailOTPResendCooldown)
+	service.codes.Set(email, pending, EmailOTPTTL)
+}
+
+func TestEmailOTPDiscardedAfterMaxAttempts(t *testing.T) {
+	service, mailer := newTestEmailOTPService(t, []string{"jane@example.com"})
+
+	require.NoError(t, service.SendCode("jane@example.com"))
+	code := mailer.lastCode(t)
+
+	wrong := "000000"
+	if code == wrong {
+		wrong = "111111"
+	}
+
+	for range EmailOTPMaxAttempts {
+		assert.ErrorIs(t, service.VerifyCode("jane@example.com", wrong), ErrEmailOTPInvalid)
+	}
+
+	assert.ErrorIs(t, service.VerifyCode("jane@example.com", code), ErrEmailOTPInvalid)
+}
+
+func TestEmailOTPConcurrentGuessesAreCapped(t *testing.T) {
+	service, mailer := newTestEmailOTPService(t, []string{"jane@example.com"})
+
+	require.NoError(t, service.SendCode("jane@example.com"))
+	code := mailer.lastCode(t)
+
+	var wg sync.WaitGroup
+	for i := range 200 {
+		guess := fmt.Sprintf("%06d", i)
+		if guess == code {
+			continue
+		}
+		wg.Go(func() {
+			service.VerifyCode("jane@example.com", guess)
+		})
+	}
+	wg.Wait()
+
+	assert.ErrorIs(t, service.VerifyCode("jane@example.com", code), ErrEmailOTPInvalid)
+}
+
+func TestEmailOTPUnlistedEmailsCannotEvictCooldown(t *testing.T) {
+	service, _ := newTestEmailOTPService(t, []string{"jane@example.com"})
+
+	require.NoError(t, service.SendCode("jane@example.com"))
+
+	for i := range MaxEmailOTPPending + 10 {
+		service.SendCode(fmt.Sprintf("user%d@example.org", i))
+	}
+
+	assert.ErrorIs(t, service.SendCode("jane@example.com"), ErrEmailOTPCooldown)
+}
+
+func TestEmailOTPGlobalSendLimit(t *testing.T) {
+	service, mailer := newTestEmailOTPService(t, []string{`/^.+@example\.com$/`})
+
+	for i := range EmailOTPMaxSendsPerMinute + 5 {
+		require.NoError(t, service.SendCode(fmt.Sprintf("user%d@example.com", i)))
+	}
+
+	mailer.waitForMail(t, EmailOTPMaxSendsPerMinute)
+	assert.Never(t, func() bool { return mailer.count() > EmailOTPMaxSendsPerMinute }, 50*time.Millisecond, 5*time.Millisecond)
+
+	_, ok := service.codes.Get(fmt.Sprintf("user%d@example.com", EmailOTPMaxSendsPerMinute))
+	assert.False(t, ok)
 }

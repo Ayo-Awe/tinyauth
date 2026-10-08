@@ -111,5 +111,6 @@
   "quickActionsTitle": "Quick Actions",
   "quickActionsProviderLocal": "Local",
   "quickActionsProviderLDAP": "LDAP",
+  "quickActionsProviderEmailOtp": "Email",
   "quickActionsProviderOAuth": "{{provider}} OAuth"
 }
