@@ -22,6 +22,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/tinyauthapp/paerser v0.0.0-20260410140347-85c3740d6298
 	github.com/weppos/publicsuffix-go v0.50.3
+	github.com/wneessen/go-mail v0.8.1
 	go.uber.org/dig v1.19.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0

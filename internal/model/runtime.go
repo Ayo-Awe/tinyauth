@@ -9,6 +9,7 @@ type RuntimeConfig struct {
 	LocalUsers               []LocalUser
 	OAuthProviders           map[string]OAuthServiceConfig
 	OAuthWhitelist           []string
+	EmailOTPWhitelist        []string
 	ConfiguredProviders      []Provider
 	TrustedProxiesConfigured bool
 }

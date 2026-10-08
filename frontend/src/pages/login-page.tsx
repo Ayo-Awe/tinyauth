@@ -1,4 +1,5 @@
 import { LoginForm } from "@/components/auth/login-form";
+import { EmailOtpForm } from "@/components/auth/email-otp-form";
 import { GithubIcon } from "@/components/icons/github";
 import { GoogleIcon } from "@/components/icons/google";
 import { MicrosoftIcon } from "@/components/icons/microsoft";
@@ -81,8 +82,14 @@ export const LoginPage = () => {
   );
 
   const oauthProviders = providers.filter(
-    (provider) => provider.id !== "local" && provider.id !== "ldap",
+    (provider) =>
+      provider.id !== "local" &&
+      provider.id !== "ldap" &&
+      provider.id !== "emailotp",
   );
+
+  const emailOtpConfigured =
+    providers.find((provider) => provider.id === "emailotp") !== undefined;
 
   const userAuthConfigured =
     providers.find(
@@ -304,9 +311,27 @@ export const LoginPage = () => {
             ))}
           </div>
         )}
-        {userAuthConfigured && oauthProviders.length !== 0 && (
+        {emailOtpConfigured && oauthProviders.length !== 0 && (
           <SeperatorWithChildren>{t("loginDivider")}</SeperatorWithChildren>
         )}
+        {emailOtpConfigured && (
+          <EmailOtpForm
+            disabled={oauthIsPending || loginIsPending}
+            onSuccess={() => {
+              toast.success(t("loginSuccessTitle"), {
+                description: t("loginSuccessSubtitle"),
+              });
+
+              redirectTimer.current = window.setTimeout(() => {
+                window.location.replace(loginForUrl);
+              }, 500);
+            }}
+          />
+        )}
+        {userAuthConfigured &&
+          (oauthProviders.length !== 0 || emailOtpConfigured) && (
+            <SeperatorWithChildren>{t("loginDivider")}</SeperatorWithChildren>
+          )}
         {userAuthConfigured && (
           <LoginForm
             onSubmit={(values) => loginMutate(values)}

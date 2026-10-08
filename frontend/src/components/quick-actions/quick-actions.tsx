@@ -20,6 +20,7 @@ import {
   Check,
   DoorOpenIcon,
   Languages,
+  Mail,
   Monitor,
   Moon,
   Palette,
@@ -108,6 +109,19 @@ export const QuickActions = () => {
       return {
         name: t("quickActionsProviderOAuth", { provider: oauth.displayName }),
         icon: iconMap[auth.providerId] || <OAuthIcon className={iconStyles} />,
+      };
+    }
+
+    if (auth.providerId === "emailotp") {
+      return {
+        name: t("quickActionsProviderEmailOtp"),
+        icon: (
+          <Mail
+            strokeWidth={1.5}
+            size={16}
+            className="text-muted-foreground ml-0.5"
+          />
+        ),
       };
     }
 

@@ -17,6 +17,16 @@
   "loginOauthAutoRedirectTitle": "OAuth Auto Redirect",
   "loginOauthAutoRedirectSubtitle": "You will be automatically redirected to your OAuth provider to authenticate.",
   "loginOauthAutoRedirectButton": "Redirect now",
+  "loginEmail": "Email",
+  "loginEmailOtpSend": "Send login code",
+  "loginEmailOtpSentTitle": "Check your email",
+  "loginEmailOtpSentSubtitle": "If your address is allowed, we sent you a 6-digit code.",
+  "loginEmailOtpCode": "Login code",
+  "loginEmailOtpVerify": "Verify code",
+  "loginEmailOtpChangeEmail": "Use a different email",
+  "loginEmailOtpSendFail": "Failed to send the login code. Please try again.",
+  "loginEmailOtpRateLimit": "A code was sent recently. Please wait a minute before requesting another one.",
+  "loginEmailOtpVerifyFail": "The code is wrong or has expired",
   "continueTitle": "Continue",
   "continueRedirectingTitle": "Redirecting...",
   "continueRedirectingSubtitle": "You should be redirected to the app soon",
@@ -101,5 +111,6 @@
   "quickActionsTitle": "Quick Actions",
   "quickActionsProviderLocal": "Local",
   "quickActionsProviderLDAP": "LDAP",
+  "quickActionsProviderEmailOtp": "Email",
   "quickActionsProviderOAuth": "{{provider}} OAuth"
 }

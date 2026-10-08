@@ -273,3 +273,19 @@ func TestContext(t *testing.T) {
 		})
 	}
 }
+
+func TestNewFromSessionEmailOTPProvider(t *testing.T) {
+	ctx, err := new(UserContext).NewFromSession(&repository.Session{
+		Username: "jane@example.com",
+		Name:     "Jane",
+		Email:    "jane@example.com",
+		Provider: "emailotp",
+	})
+
+	require.NoError(t, err)
+	assert.True(t, ctx.IsEmailOTP())
+	assert.False(t, ctx.IsOAuth())
+	assert.Equal(t, "emailotp", ctx.GetProviderID())
+	assert.Equal(t, "jane@example.com", ctx.GetUsername())
+	assert.Equal(t, "jane@example.com", ctx.GetEmail())
+}

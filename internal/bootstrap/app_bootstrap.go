@@ -43,6 +43,7 @@ type Services struct {
 	oauthBrokerService   *service.OAuthBrokerService
 	oidcService          *service.OIDCService
 	tailscaleService     *service.TailscaleService
+	emailOTPService      *service.EmailOTPService
 	policyEngine         *service.PolicyEngine
 }
 
@@ -123,6 +124,15 @@ func (app *BootstrapApp) Setup() error {
 	}
 
 	app.runtime.OAuthWhitelist = oauthWhitelist
+
+	// load email otp whitelist
+	emailOTPWhitelist, err := utils.GetStringList(app.config.EmailOTP.Whitelist, app.config.EmailOTP.WhitelistFile)
+
+	if err != nil {
+		return fmt.Errorf("failed to load email otp whitelist: %w", err)
+	}
+
+	app.runtime.EmailOTPWhitelist = emailOTPWhitelist
 
 	// setup oauth providers
 	app.runtime.OAuthProviders = app.config.OAuth.Providers
@@ -264,6 +274,14 @@ func (app *BootstrapApp) Setup() error {
 		configuredProviders = append(configuredProviders, model.Provider{
 			Name:  "LDAP",
 			ID:    "ldap",
+			OAuth: false,
+		})
+	}
+
+	if app.services.emailOTPService != nil {
+		configuredProviders = append(configuredProviders, model.Provider{
+			Name:  "Email",
+			ID:    "emailotp",
 			OAuth: false,
 		})
 	}

@@ -96,6 +96,7 @@ func (app *BootstrapApp) setupRouter() error {
 		controller.NewOIDCController,
 		controller.NewProxyController,
 		controller.NewUserController,
+		controller.NewEmailOTPController,
 		controller.NewResourcesController,
 		controller.NewHealthController,
 		controller.NewWellKnownController,
@@ -117,6 +118,7 @@ func (app *BootstrapApp) setupRouter() error {
 		OIDCController      *controller.OIDCController
 		ProxyController     *controller.ProxyController
 		UserController      *controller.UserController
+		EmailOTPController  *controller.EmailOTPController
 		ResourcesController *controller.ResourcesController
 		HealthController    *controller.HealthController
 		WellKnownController *controller.WellKnownController

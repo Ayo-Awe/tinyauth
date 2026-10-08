@@ -86,6 +86,9 @@ func NewDefaultConfiguration(runtimeEnv RuntimeEnv) *Config {
 		Tailscale: TailscaleConfig{
 			CacheDuration: int(time.Duration(5 * time.Minute).Seconds()),
 		},
+		SMTP: SMTPConfig{
+			Port: 587,
+		},
 		LabelProvider: "auto",
 	}
 
@@ -114,6 +117,8 @@ type Config struct {
 	OIDC          OIDCConfig      `description:"OIDC configuration." yaml:"oidc,omitempty"`
 	UI            UIConfig        `description:"UI customization." yaml:"ui,omitempty"`
 	LDAP          LDAPConfig      `description:"LDAP configuration." yaml:"ldap,omitempty"`
+	SMTP          SMTPConfig      `description:"SMTP server used to send emails." yaml:"smtp,omitempty"`
+	EmailOTP      EmailOTPConfig  `description:"Passwordless login with a one-time code sent by email." yaml:"emailOtp,omitempty"`
 	// enable the cli warning on experimental features
 	Experimental ExperimentalConfig `description:"Experimental features, use with caution." yaml:"experimental,omitempty"`
 	Tailscale    TailscaleConfig    `description:"Tailscale configuration." yaml:"tailscale,omitempty"`
@@ -242,6 +247,22 @@ type LogStreamConfig struct {
 type ExperimentalConfig struct {
 	OAuthBridgeEnabled        bool `description:"Enable the OAuth bridge, uses a new way to format OAuth user information." yaml:"oauthBridgeEnabled,omitempty"`
 	DisableAuthModuleFallback bool `description:"Disable the fallback to forward_auth modules when auth_request or ext_authz fail." yaml:"disableAuthModuleFallback,omitempty"`
+}
+
+type EmailOTPConfig struct {
+	Enabled       bool     `description:"Enable login with a one-time code sent by email. Requires SMTP and a whitelist." yaml:"enabled,omitempty"`
+	Whitelist     []string `description:"Comma-separated list of emails allowed to log in with an email code, or a single /regex/ filter." yaml:"whitelist,omitempty"`
+	WhitelistFile string   `description:"Path to the email OTP whitelist file." yaml:"whitelistFile,omitempty"`
+}
+
+type SMTPConfig struct {
+	Host         string `description:"SMTP server host." yaml:"host,omitempty"`
+	Port         int    `description:"SMTP server port. Port 465 uses implicit TLS, other ports require STARTTLS." yaml:"port,omitempty"`
+	Username     string `description:"SMTP username." yaml:"username,omitempty"`
+	Password     string `description:"SMTP password." yaml:"password,omitempty"`
+	PasswordFile string `description:"Path to the file containing the SMTP password." yaml:"passwordFile,omitempty"`
+	From         string `description:"Sender address for emails, e.g. Tinyauth <auth@example.com>." yaml:"from,omitempty"`
+	Insecure     bool   `description:"Allow sending without TLS. Only use this for local testing." yaml:"insecure,omitempty"`
 }
 
 type TailscaleConfig struct {
