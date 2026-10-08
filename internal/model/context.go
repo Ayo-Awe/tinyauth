@@ -20,6 +20,7 @@ const (
 	ProviderOAuth
 	ProviderLDAP
 	ProviderTailscale
+	ProviderEmailOTP
 )
 
 type UserContext struct {
@@ -30,6 +31,7 @@ type UserContext struct {
 	OAuth         *OAuthContext
 	LDAP          *LDAPContext
 	Tailscale     *TailscaleContext
+	EmailOTP      *EmailOTPContext
 }
 
 type BaseContext struct {
@@ -62,6 +64,10 @@ type TailscaleContext struct {
 	NodeName string
 }
 
+type EmailOTPContext struct {
+	BaseContext
+}
+
 func (c *UserContext) IsAuthenticated() bool {
 	return c.Authenticated
 }
@@ -86,6 +92,10 @@ func (c *UserContext) IsTailscale() bool {
 	return c.Provider == ProviderTailscale && c.Tailscale != nil
 }
 
+func (c *UserContext) IsEmailOTP() bool {
+	return c.Provider == ProviderEmailOTP && c.EmailOTP != nil
+}
+
 func (c *UserContext) NewFromGin(ginctx *gin.Context) (*UserContext, error) {
 	userContextValue, exists := ginctx.Get("context")
 
@@ -99,7 +109,7 @@ func (c *UserContext) NewFromGin(ginctx *gin.Context) (*UserContext, error) {
 		return nil, errors.New("invalid user context type")
 	}
 
-	if userContext.LDAP == nil && userContext.Local == nil && userContext.OAuth == nil && userContext.Tailscale == nil {
+	if userContext.LDAP == nil && userContext.Local == nil && userContext.OAuth == nil && userContext.Tailscale == nil && userContext.EmailOTP == nil {
 		return nil, errors.New("incomplete user context")
 	}
 
@@ -128,6 +138,15 @@ func (c *UserContext) NewFromSession(session *repository.Session) (*UserContext,
 	case "ldap":
 		c.Provider = ProviderLDAP
 		c.LDAP = &LDAPContext{
+			BaseContext: BaseContext{
+				Username: session.Username,
+				Name:     session.Name,
+				Email:    session.Email,
+			},
+		}
+	case "emailotp":
+		c.Provider = ProviderEmailOTP
+		c.EmailOTP = &EmailOTPContext{
 			BaseContext: BaseContext{
 				Username: session.Username,
 				Name:     session.Name,
@@ -189,6 +208,11 @@ func (c *UserContext) getBaseContext() *BaseContext {
 			return nil
 		}
 		return &c.Tailscale.BaseContext
+	case ProviderEmailOTP:
+		if c.EmailOTP == nil {
+			return nil
+		}
+		return &c.EmailOTP.BaseContext
 	default:
 		return nil
 	}
@@ -228,6 +252,8 @@ func (c *UserContext) GetProviderID() string {
 		return c.OAuth.ID
 	case ProviderTailscale:
 		return "tailscale"
+	case ProviderEmailOTP:
+		return "emailotp"
 	default:
 		return "unknown"
 	}

@@ -44,6 +44,7 @@ type ContextMiddleware struct {
 	auth      *service.AuthService
 	broker    *service.OAuthBrokerService
 	tailscale *service.TailscaleService
+	emailOTP  *service.EmailOTPService
 }
 
 type ContextMiddlewareInput struct {
@@ -55,6 +56,7 @@ type ContextMiddlewareInput struct {
 	AuthService      *service.AuthService
 	BrokerService    *service.OAuthBrokerService
 	TailscaleService *service.TailscaleService
+	EmailOTPService  *service.EmailOTPService `optional:"true"`
 }
 
 func NewContextMiddleware(i ContextMiddlewareInput) *ContextMiddleware {
@@ -65,6 +67,7 @@ func NewContextMiddleware(i ContextMiddlewareInput) *ContextMiddleware {
 		auth:      i.AuthService,
 		broker:    i.BrokerService,
 		tailscale: i.TailscaleService,
+		emailOTP:  i.EmailOTPService,
 	}
 }
 
@@ -225,6 +228,16 @@ func (m *ContextMiddleware) cookieAuth(ctx context.Context, uuid string, ip stri
 		if !m.auth.IsEmailWhitelisted(userContext.OAuth.ID, userContext.OAuth.Email) {
 			m.auth.DeleteSession(ctx, uuid)
 			return nil, nil, fmt.Errorf("email from session cookie not whitelisted: %s", userContext.OAuth.Email)
+		}
+	case model.ProviderEmailOTP:
+		if m.emailOTP == nil {
+			return nil, nil, fmt.Errorf("email otp provider from session cookie not configured")
+		}
+
+		// re-check on every request so removing an address revokes access
+		if !m.emailOTP.IsEmailWhitelisted(userContext.EmailOTP.Email) {
+			m.auth.DeleteSession(ctx, uuid)
+			return nil, nil, fmt.Errorf("email from session cookie not whitelisted: %s", userContext.EmailOTP.Email)
 		}
 	}
 
